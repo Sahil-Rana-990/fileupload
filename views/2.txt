@@ -1,0 +1,64 @@
+const express = require('express');
+const multer = require('multer');
+const { MongoClient } = require('mongodb');
+const  GridFsStorage  = require('multer-gridfs-storage');
+const path = require('path');
+
+const app = express();
+const port = 5000;
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// MongoDB connection
+const uri = 'mongodb+srv://hemarana9099852230:12345@cluster0.rakth2q.mongodb.net/GRAPHQL';
+const client = new MongoClient(uri);
+
+// Set up GridFS storage
+const storage = new GridFsStorage({
+  url: uri,
+  file: (req, file) => {
+    return {
+      bucketName: 'uploads', // Name of the bucket
+      filename: file.originalname,
+    };
+  },
+});
+
+const upload = multer({ storage });
+
+app.post('/upload', upload.single('image'), async (req, res) => {
+  try {
+    console.log('Image stored in GridFS');
+    res.status(200).json({ message: 'Image uploaded successfully' });
+  } catch (error) {
+    console.error('Error uploading image', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/image/:filename', async (req, res) => {
+  try {
+    await client.connect();
+    const db = client.db('test');
+
+    const collection = db.collection('uploads.files');
+    const image = await collection.findOne({ filename: req.params.filename });
+
+    if (!image) {
+      return res.status(404).json({ error: 'Image not found' });
+    }
+
+    const bucket = new MongoClient.GridFSBucket(db);
+    const downloadStream = bucket.openDownloadStream(image._id);
+
+    downloadStream.pipe(res);
+  } catch (error) {
+    console.error('Error retrieving image', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
